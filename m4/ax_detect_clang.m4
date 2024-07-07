@@ -184,6 +184,16 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
 	Clang->createPreprocessor(TU_Complete);
 ]])], [AC_DEFINE([CREATEPREPROCESSOR_TAKES_TUKIND], [],
 [Define if CompilerInstance::createPreprocessor takes TranslationUnitKind])])
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
+		[[#include <clang/Basic/SourceManager.h>]], [[
+	using namespace clang;
+	SourceManager* sm;
+	SourceLocation* loc;
+	SrcMgr::CharacteristicKind* c_kind;
+	const FileEntry* entry;
+	sm->createFileID(entry, *loc, *c_kind);
+]])], [], [AC_DEFINE([CEATEFILEID_TAKES_FILEENTRYREF_ONLY], [],
+	[Define if SourceManager::createFileID takes FileEntryRef only])])
 AC_EGREP_HEADER([setMainFileID], [clang/Basic/SourceManager.h],
 	[AC_DEFINE([HAVE_SETMAINFILEID], [],
 	[Define if SourceManager has a setMainFileID method])])

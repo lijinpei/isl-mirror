@@ -406,9 +406,15 @@ void add_path(HeaderSearchOptions &HSO, string Path)
 
 #endif
 
+#ifdef CEATEFILEID_TAKES_FILEENTRYREF_ONLY
+typedef const clang::FileEntryRef FileEntryRefType;
+#else
+typedef const clang::FileEntry * FileEntryRefType;
+#endif
+
 #ifdef HAVE_SETMAINFILEID
 
-static void create_main_file_id(SourceManager &SM, const FileEntry *file)
+static void create_main_file_id(SourceManager &SM, FileEntryRefType file)
 {
 	SM.setMainFileID(SM.createFileID(file, SourceLocation(),
 					SrcMgr::C_User));
@@ -416,7 +422,7 @@ static void create_main_file_id(SourceManager &SM, const FileEntry *file)
 
 #else
 
-static void create_main_file_id(SourceManager &SM, const FileEntry *file)
+static void create_main_file_id(SourceManager &SM, FileEntry file)
 {
 	SM.createMainFileID(file);
 }
@@ -466,41 +472,54 @@ static void set_invocation(CompilerInstance *Clang,
 #endif
 
 /* Helper function for ignore_error that only gets enabled if T
- * (which is either const FileEntry * or llvm::ErrorOr<const FileEntry *>)
- * has getError method, i.e., if it is llvm::ErrorOr<const FileEntry *>.
+ * (which is either FileEntryRefType or llvm::ErrorOr<FileEntryRefType>)
+ * has getError method, i.e., if it is llvm::ErrorOr<FileEntryRefType>.
  */
 template <class T>
-static const FileEntry *ignore_error_helper(const T obj, int,
-	int[1][sizeof(obj.getError())])
+static FileEntryRefType  ignore_error_helper(const llvm::ErrorOr<T> obj)
 {
 	return *obj;
 }
 
-/* Helper function for ignore_error that is always enabled,
- * but that only gets selected if the variant above is not enabled,
- * i.e., if T is const FileEntry *.
+/* Helper function for ignore_error that only gets enabled if T
+ * (which is either FileEntryRefType or llvm::ErrorOr<FileEntryRefType>)
+ * has getError method, i.e., if it is llvm::ErrorOr<FileEntryRefType>.
  */
 template <class T>
-static const FileEntry *ignore_error_helper(const T obj, long, void *)
+static FileEntryRefType ignore_error_helper(llvm::Expected<T>&& obj)
+{
+	return llvm::cantFail(std::move(obj));
+}
+
+/* Helper function for ignore_error that is always enabled,
+ * but that only gets selected if the variant above is not enabled,
+ * i.e., if T is FileEntryRefType.
+ */
+template <class T>
+static FileEntryRefType ignore_error_helper(const T obj, long, void *)
 {
 	return obj;
 }
 
-/* Given either a const FileEntry * or a llvm::ErrorOr<const FileEntry *>,
- * extract out the const FileEntry *.
+/* Given either a FileEntryRefType or a llvm::ErrorOr<FileEntryRefType>,
+ * extract out the FileEntryRefType.
  */
 template <class T>
-static const FileEntry *ignore_error(const T obj)
+static FileEntryRefType ignore_error(T obj)
 {
-	return ignore_error_helper(obj, 0, NULL);
+	return ignore_error_helper(std::move(obj));
 }
 
-/* Return the FileEntry corresponding to the given file name
+/* Return the FileEntryRefType corresponding to the given file name
  * in the given compiler instances, ignoring any error.
  */
-static const FileEntry *getFile(CompilerInstance *Clang, std::string Filename)
+static FileEntryRefType getFile(CompilerInstance *Clang, std::string Filename)
 {
+#ifdef CEATEFILEID_TAKES_FILEENTRYREF_ONLY
+	return ignore_error(Clang->getFileManager().getFileRef(Filename));
+#else
 	return ignore_error(Clang->getFileManager().getFile(Filename));
+#endif
 }
 
 /* Create an interface generator for the selected language and
@@ -575,7 +594,7 @@ int main(int argc, char *argv[])
 
 	PP.getBuiltinInfo().initializeBuiltins(PP.getIdentifierTable(), LO);
 
-	const FileEntry *file = getFile(Clang, InputFilename);
+	FileEntryRefType file = getFile(Clang, InputFilename);
 	assert(file);
 	create_main_file_id(Clang->getSourceManager(), file);
 
